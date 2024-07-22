@@ -1,0 +1,1 @@
+It is very difficult to draw a probability density function such as a normal distribution in freehand. It is not human work to draw curves with inflection points in mind, or to draw the convergence at infinity! Now, all you statisticians, show me your skills at drawing probability density functions. Good luck!

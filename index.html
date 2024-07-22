@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Probability Density Function Competition</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<head>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        canvas {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        button,
+        a {
+            background-color: #F26649;
+            color: white;
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover,
+        a:hover {
+            background-color: #45a049;
+        }
+
+        #distributionName,
+        #formula {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #333;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            margin-bottom: 10px;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+
+<body>
+    <H1>確率密度関数フリーハンドチャレンジ！</H1>
+    フリーハンドで確率密度関数を描いてみましょう。統計に明るいあなたなら、式を見ただけで描けるはず！？
+    <H2>ルール</H2>
+    <ul>
+        <li>点数は100点満点です。</li>
+        <li>マウスをクリックして（スマホならタップ）、離さずに（ドラッグして）描き進めてください。</li>
+        <li>マウス（指）を離すと採点されます。</li>
+        <li>ある程度左から描き始めて、ある程度右側まで描かないと点数計算されません。</li>
+        <li>左から右方向に描き進めてください。右から左方向への描画が始まると採点されません。</li>
+        <li>制限時間はありません。ゆっくり描いても大丈夫です（ただしマウスや指を離してはいけません）</li>
+        <li>確率密度関数の確率密度が0の区間は採点対象外です。（描画しても減点されませんが、）指数分布のxが負の区間などは描かなくて大丈夫です。</li>
+        <li>もう一度書き始めれば、自動的に同じ条件で再開されます。</li>
+        <li>「ランダム出題モード」ボタンを押すたびに、描く確率密度関数のお題が変更されます（分布のパラメータに注意して描いてみてください）。</li>
+
+    </ul>
+    <canvas id="drawingCanvas" width="500" height="500"></canvas>
+    <div id="distributionName"></div>
+
+    <div id="formula"></div>
+
+    <!-- <button id=”nomalbutton” type=”button” onclick="setThemeStandardNomal()">標準正規分布モード</button>
+    <button id=”randombutton” type=”button” onclick="setTheme()">ランダム出題モード</button> -->
+    <div class="button-container">
+        <button id="nomalbutton" type="button" onclick=setThemeStandardNomal()>標準正規分布モード</button>
+        <button id="randombutton" type="button" onclick=setTheme()>ランダム出題モード</button>
+    </div>
+
+    <a href="http://twitter.com/share?url=https://atsushi-green.github.io/PDF-compete/&text=確率密度関数を描いてみた！ &hashtags=PDFフリーハンドチャレンジ"
+        target="_blank" rel="nofollow noopener noreferrer">Xで共有する</a>
+    <small>
+        <center> &copy; 2024 redtea</center>
+    </small>
+    <script src="./pdf.js"></script>
+    <script src="./canvas.js"></script>
+
+    <script>
+        /****************************************
+        # この実装を見に来てまでハイスコア (score, eval) を出したいた方へ
+        実装まで見にきてくださってありがとうございます！
+        ハイスコアを出すためのヒントを書いておきます。
+        - 評価方法はy軸の値の差の二乗和の「平均値」です。
+        - マウスドラッグ（スマホなら指の動き）の動きが遅いと評価するポイントが多くなり、速いと少なくなります。
+        - したがって、自信のある箇所はゆっくり動かすことで高得点を稼ぐことができ、自信がないところは素早く動かして誤魔化すことができます。
+        - 二乗誤差の計算時に、一度絶対値の差を何倍かしてから二乗しているので、100点はほぼ出すことはできません。
+        *****************************************/
+        const WIDTH = 500;
+        const HEIGHT = 500;
+        const Y_ZERO = 400;
+        var X_MIN = -4;
+        var X_MAX = 4;
+        const ANS_COLOR = "#1E90FF"
+        const SYUIRO_COLOR = "#F26649"
+
+        function standarizeX(x) {
+            return ((X_MAX - X_MIN) / WIDTH) * x + X_MIN
+
+        }
+        function standarizeY(y) {
+            return 0.5 / Y_ZERO * (Y_ZERO - y)
+
+        }
+
+        function getRandomInt(min, max) {
+            min = Math.ceil(min); // 最小値を切り上げ
+            max = Math.floor(max); // 最大値を切り捨て
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        let distributionMapping = new Map();
+        distributionMapping.set("標準正規分布", StandardNormalDistribution);
+        distributionMapping.set("正規分布", NormalDistribution);
+        distributionMapping.set("一様分布", UniformDistribution);
+        distributionMapping.set("指数分布", ExpoDistribution);
+        distributionMapping.set("ガンマ分布", GammaDistribution);
+        distributionMapping.set("T分布", TDistribution);
+        distributionMapping.set("コーシー分布", CauchyDistribution);
+        distributionMapping.set("ラプラス分布", LaplaceDistribution);
+
+
+        function getParams(theme) {
+            if (theme == "標準正規分布") {
+                return [0, 1];
+            } else if (theme == "正規分布") {
+                mu = getRandomInt(-2, 2);
+                sigma = Math.round(Math.random() * 2 + 0.5);
+                return [mu, sigma];
+            }
+            else if (theme == "一様分布") {
+                // a, b
+                a = getRandomInt(-4, -1);
+                b = getRandomInt(1, 4);
+                return [a, b];
+            } else if (theme == "指数分布") {
+                // λ
+                lambda = getRandomInt(2, 5);
+                return [1 / lambda];
+            } else if (theme == "ガンマ分布") {
+                // α、β
+                a = getRandomInt(1, 5);
+                b = getRandomInt(1, 5);
+                return [a, 1 / b];
+            } else if (theme == "T分布") {
+                // 自由度
+                df = getRandomInt(1, 15);
+                return [df];
+            } else if (theme == "コーシー分布") {
+                // α、β
+                x0 = getRandomInt(-2, 2);
+                gamma_ = getRandomInt(1, 5);
+                return [x0, gamma_];
+            } else if (theme == "ラプラス分布") {
+                // μ, b
+                mu = getRandomInt(-2, 2);
+                b = getRandomInt(1, 5);
+                return [mu, b];
+
+            }
+        }
+        // 初期値は標準正規分布
+        let DIST = new NormalDistribution([0, 1]);
+
+        // 確率密度関数を決める
+        function setTheme() {
+            var distList = ["正規分布", "一様分布", "指数分布", "ガンマ分布", "T分布", "コーシー分布", "ラプラス分布"];
+            let random = getRandomInt(0, distList.length - 1);
+            theme = distList[random]
+            params = getParams(theme);
+            console.log("params", params);
+            DIST = new (distributionMapping.get(theme))(params);
+            var mathOutput = document.getElementById('formula');
+            mathOutput.innerHTML = DIST.formula + " を描いてください。"
+            MathJax.typeset([mathOutput]);
+            // X_MIN = DIST.x_min
+            // X_MAX = DIST.x_max
+            // TODO: X軸の描画範囲を示す
+            // DISTを用いて引数を渡す
+            var distName = document.getElementById('distributionName');
+            distName.innerHTML = DIST.name
+
+        }
+
+        function setThemeStandardNomal() {
+            theme = "標準正規分布"
+            params = getParams(theme);
+            console.log("params", params);
+            DIST = new (distributionMapping.get(theme))(params);
+            var mathOutput = document.getElementById('formula');
+            mathOutput.innerHTML = DIST.formula
+            MathJax.typeset([mathOutput]);
+            var distName = document.getElementById('distributionName');
+            distName.innerHTML = DIST.name
+            // X_MIN = DIST.x_min
+            // X_MAX = DIST.x_max
+
+        }
+
+        function sampling(drawingPath) {
+            // var n = 20;
+            var n = 3;
+            // n件以下の場合はそのまま返す
+            if (drawingPath.length < n) return drawingPath;
+
+
+            var interval = parseInt(drawingPath.length / n, 10);
+            console.log("interval", interval);
+            var sampledPath = [];
+            for (let i = 0; i < drawingPath.length; i++) {
+                if (i % interval == 0) {
+                    sampledPath.push(drawingPath[i]);
+                }
+            }
+            return sampledPath;
+
+        }
+
+        function generate_answer_distribution(x_list) {
+            return x_list.map(x => DIST.pdf(x));
+        }
+
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+
+        draw_ruled_line();
+
+        let isDrawing = false;
+        let lastPoint = { x: 0, y: 0 };
+        let drawingPath = [];
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+        var mathOutput = document.getElementById('formula');
+        mathOutput.innerHTML = `$$ N(0, 1) = {1 \\over \\sqrt{2 \\pi}} \\exp{(\\frac{-x ^ 2}{2})} $$` + " を描いてください。"
+        MathJax.typeset([mathOutput]);
+
+        var distName_ = document.getElementById('distributionName');
+        distName_.innerHTML = "標準正規分布"
+
+
+        function calc_score(drawingPath) {
+            // 描画軌跡を評価する
+            // 確率密度関数の形に近ければ近いほど高得点とする。
+            // drawingPath = sampling(drawingPath);
+            console.log("drawingPath.length", drawingPath.length);
+            answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
+
+            drawingPath_y = drawingPath.map(([x, y]) => y);
+            let n = answer_pdf_y.length;
+
+            // 絶対誤差 (面積的) で評価する
+            cost = 0
+            for (let i = 0; i < n; i++) {
+                if (answer_pdf_y[i] === 0) {
+                    // 0の箇所は採点対象外
+                    continue
+                }
+                // パラメータの微調整で750に決定
+                cost += Math.abs((answer_pdf_y[i] - drawingPath_y[i]) * 750);
+            }
+
+            return Math.max(100 - (cost / drawingPath_y.length), 0);
+        }
+
+        function normarizeDrawingPath(drawingPath) {
+            normarized = drawingPath.map(([x, y]) => [((X_MAX - X_MIN) / WIDTH) * x + X_MIN, 0.5 / Y_ZERO * (Y_ZERO - y)]);
+
+            return normarized
+
+            const samplingInterval = 10; // サンプリング間隔
+            const sampledPath = [];
+            let accumulatedLength = 0;
+            for (let i = 0; i < drawingPath.length; i++) {
+                if (i === 0) {
+                    sampledPath.push(drawingPath[i]);
+                    continue;
+                }
+
+                const [prevX, prevY] = drawingPath[i - 1];
+                const [x, y] = drawingPath[i];
+                const distance = Math.sqrt((x - prevX) ** 2 + (y - prevY) ** 2);
+                accumulatedLength += distance;
+
+                if (accumulatedLength >= samplingInterval) {
+                    const ratio = (accumulatedLength - samplingInterval) / distance;
+                    const sampledX = prevX + ratio * (x - prevX);
+                    const sampledY = prevY + ratio * (y - prevY);
+                    sampledPath.push([sampledX, sampledY]);
+                    accumulatedLength = 0;
+                }
+            }
+
+            return sampledPath;
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            // キャンバスをクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            draw_ruled_line();
+            lastPoint = { x: e.offsetX, y: e.offsetY };
+            if (DIST.MinStartX < standarizeX(lastPoint.x)) {
+                tooRightError();
+            }
+            drawingPath.push([lastPoint.x, lastPoint.y]); // 描画開始点を記録
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+
+            const currentPoint = { x: e.offsetX, y: e.offsetY };
+            // X軸逆方向に描画された場合、描画を中止する
+            if (currentPoint.x < lastPoint.x) {
+                interruptDrawing();
+            }
+            ctx.strokeStyle = ANS_COLOR;
+
+            ctx.beginPath();
+            ctx.moveTo(lastPoint.x, lastPoint.y);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.stroke();
+            // ctx.fillRect(currentPoint.x, currentPoint.y, 1, 1);  # 点線で描画（デバッグ用）
+
+
+            lastPoint = currentPoint;
+            drawingPath.push([currentPoint.x, currentPoint.y]); // 描画軌跡を記録
+
+        }
+
+        function score2comment(score) {
+            if (score == 100) {
+                return "Stop cheating!"
+            }
+            else if (score > 99) {
+                return "Excellent!!!"
+            } else if (score > 97) {
+                return "wonderful!!"
+            } else if (score > 95) {
+                return "amazing!"
+            } else if (score > 90) {
+                return "Great!"
+            } else if (score > 80) {
+                return "great!"
+            } else if (score > 70) {
+                return "good!"
+            }
+            else {
+                return "Keep trying!"
+            }
+
+        }
+
+        function interruptDrawing() {
+            if (isDrawing) {
+                ctx.fillStyle = 'red';
+                var context = canvas.getContext('2d');
+                context.font = 'normal 9pt "メイリオ"';
+
+                ctx.fillText("X軸方向は必ず正の方向に描き進めてください（左から右へ）。", canvas.width / 2, Y_ZERO * 0.3);
+                ctx.fillStyle = 'black'; // 元の色に戻す
+                ctx.stroke();
+                isDrawing = false;
+                drawingPath = [];
+            }
+
+        }
+
+        function tooRightError() {
+            if (isDrawing) {
+                ctx.fillStyle = 'red';
+                var context = canvas.getContext('2d');
+                context.font = 'normal 9pt "メイリオ"';
+
+                ctx.fillText("描画範囲が狭すぎます。もっと左側から描いてください。", canvas.width / 2, Y_ZERO * 0.3);
+                ctx.fillStyle = 'black'; // 元の色に戻す
+                ctx.stroke();
+                isDrawing = false;
+                drawingPath = [];
+            }
+        }
+
+        function LackRightError() {
+            if (isDrawing) {
+                ctx.fillStyle = 'red';
+                var context = canvas.getContext('2d');
+                context.font = 'normal 9pt "メイリオ"';
+                ctx.fillText("描画範囲が狭すぎます。もっと右側まで描いてください。", canvas.width / 2, Y_ZERO * 0.3);
+                ctx.fillStyle = 'black'; // 元の色に戻す
+                ctx.stroke();
+                isDrawing = false;
+                drawingPath = [];
+            }
+        }
+
+        function stopDrawing() {
+            if (isDrawing) {
+                normalized_drawingPath = normarizeDrawingPath(drawingPath);
+                score = calc_score(normalized_drawingPath);
+
+
+                // 元に戻す
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                if (standarizeX(lastPoint.x) < DIST.MinEndX) {
+                    LackRightError();
+                } else {
+                    var context = canvas.getContext('2d');
+                    context.font = 'normal 18pt "メイリオ"';
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "top";
+                    var comment = score2comment(score);
+                    ctx.fillText("得点: " + score.toFixed(2), 0, 0);
+                    ctx.fillText("Click to play again!", 0, 60);
+                    ctx.fillStyle = SYUIRO_COLOR;
+                    ctx.fillText(comment, 0, 30);
+                    ctx.fillStyle = "#000000"; //元に戻す
+                    // 正解の正規分布を描画
+                    ctx.beginPath();
+                    ctx.strokeStyle = SYUIRO_COLOR;
+                    const xValues = linspace(X_MIN, X_MAX, WIDTH);
+                    const yValues = generate_answer_distribution(xValues);
+                    for (let i = 0; i < xValues.length; i++) {
+                        const x = (xValues[i] - X_MIN) * WIDTH / (X_MAX - X_MIN);
+                        const y = Y_ZERO - yValues[i] * Y_ZERO * 2;
+                        if (i === 0) {
+                            ctx.moveTo(x, y);
+                        } else {
+                            // ctx.fillRect(x, y, 1, 1);
+                            ctx.lineTo(x, y);
+                        }
+                    }
+                    ctx.stroke();
+                    ctx.strokeStyle = 'black'; // 元の色に戻す
+
+                }
+                isDrawing = false;
+                drawingPath = [];
+                // ctx.beginPath();
+                // ctx.strokeStyle = 'red';
+                // xValues = normalized_drawingPath.map(([x, y]) => x);
+                // yValues = generate_answer_distribution(xValues);
+                // for (let i = 0; i < xValues.length; i++) {
+                //     const x = (xValues[i] - X_MIN) * WIDTH / (X_MAX - X_MIN);
+                //     const y = Y_ZERO - yValues[i] * Y_ZERO * 2;
+                //     if (i === 0) {
+                //         ctx.moveTo(x, y);
+                //     } else {
+                //         ctx.fillRect(x, y, 1, 1);
+                //         // ctx.lineTo(x, y);
+                //     }
+                // }
+
+            }
+        }
+
+
+
+    </script>
+</body>
+
+</html>
