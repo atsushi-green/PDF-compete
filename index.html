@@ -270,6 +270,12 @@
         canvas.addEventListener('mousemove', draw);
         canvas.addEventListener('mouseup', stopDrawing);
         canvas.addEventListener('mouseout', stopDrawing);
+
+        // モバイル用
+        canvas.addEventListener('touchstart', startDrawingMobile);
+        canvas.addEventListener('touchmove', drawMobile);
+        canvas.addEventListener('touchend', stopDrawing);
+
         var mathOutput = document.getElementById('formula');
         mathOutput.innerHTML = `$$ N(0, 1) = {1 \\over \\sqrt{2 \\pi}} \\exp{(\\frac{-x ^ 2}{2})} $$` + " を描いてください。"
         MathJax.typeset([mathOutput]);
@@ -345,10 +351,48 @@
             drawingPath.push([lastPoint.x, lastPoint.y]); // 描画開始点を記録
         }
 
+        function startDrawingMobile(e) {
+            isDrawing = true;
+            // キャンバスをクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            draw_ruled_line();
+            offsetX = e.touches[0].pageX - e.touches[0].target.offsetLeft;  // タッチ位置のX座標
+            offsetY = e.touches[0].pageY - e.touches[0].target.offsetTop;  // タッチ位置のY座標
+            lastPoint = { x: offsetX, y: offsetY };
+            if (DIST.MinStartX < standarizeX(lastPoint.x)) {
+                tooRightError();
+            }
+            drawingPath.push([lastPoint.x, lastPoint.y]); // 描画開始点を記録
+        }
+
         function draw(e) {
             if (!isDrawing) return;
 
             const currentPoint = { x: e.offsetX, y: e.offsetY };
+            // X軸逆方向に描画された場合、描画を中止する
+            if (currentPoint.x < lastPoint.x) {
+                interruptDrawing();
+            }
+            ctx.strokeStyle = ANS_COLOR;
+
+            ctx.beginPath();
+            ctx.moveTo(lastPoint.x, lastPoint.y);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.stroke();
+            // ctx.fillRect(currentPoint.x, currentPoint.y, 1, 1);  # 点線で描画（デバッグ用）
+
+
+            lastPoint = currentPoint;
+            drawingPath.push([currentPoint.x, currentPoint.y]); // 描画軌跡を記録
+
+        }
+
+        function drawMobile(e) {
+            if (!isDrawing) return;
+            offsetX = e.touches[0].pageX - e.touches[0].target.offsetLeft;  // タッチ位置のX座標
+            offsetY = e.touches[0].pageY - e.touches[0].target.offsetTop;  // タッチ位置のY座標
+
+            const currentPoint = { x: offsetX, y: offsetY };
             // X軸逆方向に描画された場合、描画を中止する
             if (currentPoint.x < lastPoint.x) {
                 interruptDrawing();
@@ -436,7 +480,6 @@
             if (isDrawing) {
                 normalized_drawingPath = normarizeDrawingPath(drawingPath);
                 score = calc_score(normalized_drawingPath);
-
 
                 // 元に戻す
                 ctx.textAlign = "center";
