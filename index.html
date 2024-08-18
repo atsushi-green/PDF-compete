@@ -9,6 +9,12 @@
             border: 1px solid black;
         }
     </style>
+    <meta property="og:image"
+        content="https://raw.githubusercontent.com/atsushi-green/PDF-compete/main/asserts/free-hand-ogp.jpg">
+    <meta property="og:description" content="確率密度関数のフリーハンド採点サービスです。">
+    <link rel="icon" type="image/png" href="https://avatars.githubusercontent.com/u/129949522?v=4">
+
+
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
@@ -118,10 +124,10 @@
         # この実装を見に来てまでハイスコア (score, eval) を出したいた方へ
         実装まで見にきてくださってありがとうございます！
         ハイスコアを出すためのヒントを書いておきます。
-        - 評価方法はy軸の値の差の二乗和の「平均値」です。
+        - 評価方法はy軸の値の差の絶対値の「平均値」です。
         - マウスドラッグ（スマホなら指の動き）の動きが遅いと評価するポイントが多くなり、速いと少なくなります。
         - したがって、自信のある箇所はゆっくり動かすことで高得点を稼ぐことができ、自信がないところは素早く動かして誤魔化すことができます。
-        - 二乗誤差の計算時に、一度絶対値の差を何倍かしてから二乗しているので、100点はほぼ出すことはできません。
+        - 誤差の計算時に、一度絶対値の差を何倍かしてから二乗しているので、100点はほぼ出すことはできません。
         *****************************************/
         const WIDTH = 500;
         const HEIGHT = 500;
