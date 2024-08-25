@@ -303,7 +303,28 @@
         var distName_ = document.getElementById('distributionName');
         distName_.innerHTML = "標準正規分布"
 
-        function calc_transport_score(drawingPath) {
+        function calc_KL_divergence_cost(drawingPath) {
+            answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
+            let xList = drawingPath.map(([x, y]) => x);
+            let yList = drawingPath.map(([x, y]) => y);
+            // let sampled_answer_pdf_y = sampling_array(answer_pdf_y);
+            // let sampled_yList = sampling_array(yList);
+            // let sampled_xList = sampling_array(xList);
+            let normarized_ans = normarize_distribution_for_transport(answer_pdf_y);
+            let normarized_yList = normarize_distribution_for_transport(yList);
+            let kl_divergence = 0;
+            for (let i = 0; i < normarized_ans.length; i++) {
+                kl_divergence += normarized_ans[i] * Math.log(normarized_ans[i] / normarized_yList[i]);
+            }
+            return kl_divergence
+
+        }
+
+        function KL_divergence_cost2score(kl_divergence) {
+            return Math.max(100 - kl_divergence * 100, 0);
+        }
+
+        function calc_transport_cost(drawingPath) {
             answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
             // drawingPath.map(([x, y]) => x
             let xList = drawingPath.map(([x, y]) => x);
@@ -356,10 +377,13 @@
             }
 
             let transport_cost = S.flat().reduce((a, b) => a + b, 0);
-            return Math.max(100 - transport_cost * 100, 0);
-
-
+            return transport_cost
         };
+
+        function transport_cost2score(transport_cost) {
+            return Math.max(100 - transport_cost * 100, 0);
+        }
+
         function normarize_distribution_for_transport(dist) {
             // 負の値なくすために全体を上にシフト
             let min = Math.min(...dist);
@@ -370,7 +394,7 @@
             return shifted.map(x => x / sum);
         }
 
-        function calc_score(drawingPath) {
+        function calc_abs_diff_cost(drawingPath) {
 
             // 描画軌跡を評価する
             // 確率密度関数の形に近ければ近いほど高得点とする。
@@ -389,10 +413,14 @@
                     continue
                 }
                 // パラメータの微調整で750に決定
-                cost += Math.abs((answer_pdf_y[i] - drawingPath_y[i]) * 750);
+                cost += Math.abs((answer_pdf_y[i] - drawingPath_y[i]));
             }
+            return cost;
 
-            return Math.max(100 - (cost / drawingPath_y.length), 0);
+        }
+
+        function abs_diff_cost2score(cost) {
+            return Math.max(100 - (cost * 750 / drawingPath_y.length), 0);
         }
 
         function normarizeDrawingPath(drawingPath) {
@@ -566,10 +594,26 @@
         function stopDrawing() {
             if (isDrawing) {
                 normalized_drawingPath = normarizeDrawingPath(drawingPath);
-                let transport_score = calc_transport_score(normalized_drawingPath);
-                let abs_score = calc_score(normalized_drawingPath);
+                // 最適輸送のスコア計算
+                let transport_cost = calc_transport_cost(normalized_drawingPath);
+                let transport_score = transport_cost2score(transport_cost);
+
+                // KL情報量のスコア計算
+                let KL_divergence_cost = calc_KL_divergence_cost(normalized_drawingPath);
+                let KL_divergence_score = KL_divergence_cost2score(KL_divergence_cost);
+
+                // 絶対誤差のスコア計算
+                let abs_cost = calc_abs_diff_cost(normalized_drawingPath);
+                let abs_score = abs_diff_cost2score(abs_cost);
+
+                console.log(DIST.name);
+                if (DIST.name != "標準正規分布" && DIST.name != "正規分布") {
+                    transport_score = NaN;
+                    KL_divergence_score = NaN;
+                }
                 console.log("transport_score", transport_score);
                 console.log("abs_score", abs_score);
+                console.log("KL_divergence_score", KL_divergence_score);
 
                 // 元に戻す
                 ctx.textAlign = "center";
@@ -584,10 +628,17 @@
                     var comment = score2comment(abs_score);
                     ctx.fillText("絶対誤差得点: " + abs_score.toFixed(2), 0, 0);
                     ctx.fillText("最適輸送得点: " + transport_score.toFixed(2), 0, 30);
-                    ctx.fillText("Click to play again!", 0, 90);
+                    ctx.fillText("KL情報量得点: " + KL_divergence_score.toFixed(2), 0, 60);
+                    ctx.fillText("Click to play again!", 0, 120);
                     ctx.fillStyle = SYUIRO_COLOR;
-                    ctx.fillText(comment, 0, 60);
+                    ctx.fillText(comment, 0, 90);
+
+                    context.font = 'normal 8pt "メイリオ"';
                     ctx.fillStyle = "#000000"; //元に戻す
+                    ctx.fillText("絶対誤差: " + abs_cost.toFixed(2), 0, 445);
+                    ctx.fillText("輸送コスト: " + transport_cost.toFixed(2), 0, 460);
+                    ctx.fillText("KL情報量: " + KL_divergence_cost.toFixed(2), 0, 475);
+
                     // 正解の正規分布を描画
                     ctx.beginPath();
                     ctx.strokeStyle = SYUIRO_COLOR;
