@@ -303,7 +303,7 @@
         var distName_ = document.getElementById('distributionName');
         distName_.innerHTML = "標準正規分布"
 
-        function calc_transport(drawingPath) {
+        function calc_transport_score(drawingPath) {
             answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
             // drawingPath.map(([x, y]) => x
             let xList = drawingPath.map(([x, y]) => x);
@@ -320,8 +320,8 @@
             console.log(sampled_xList);
             console.log("sampled_answer_pdf_y", sampled_answer_pdf_y.length);
             // 出入りの合計が一致するように正規化
-            let normarized_ans = normarize_distribution(sampled_answer_pdf_y);
-            let normarized_yList = normarize_distribution(sampled_yList);
+            let normarized_ans = normarize_distribution_for_transport(sampled_answer_pdf_y);
+            let normarized_yList = normarize_distribution_for_transport(sampled_yList);
 
             // 距離行列の定義
             let matrix_size = normarized_yList.length;
@@ -338,38 +338,40 @@
 
             // 二段階シンプレックス法で解く
             newTableau = solveLinearProgramming1(distance_matrix, normarized_ans, normarized_yList);
-            X = solveLinearProgramming2(newTableau, distance_matrix);
+            P = solveLinearProgramming2(newTableau, distance_matrix);
             // X = solveLinearProgramming(distance_matrix, answer_pdf_y, yList);
             // console.log("X", X);
             // P: 輸送行列
             // CPが輸送コスト
             // Pのi成分の和 = drawingPath
             // Pのj成分の和 = answer_pdf_y
-            let P = [];
+            // 要素積の P \dot C を求める
+            let S = [];
             for (let i = 0; i < distance_matrix.length; i++) {
                 let row = [];
                 for (let j = 0; j < distance_matrix[i].length; j++) {
-                    row.push(distance_matrix[i][j] * X[i][j]);
+                    row.push(distance_matrix[i][j] * P[i][j]);
                 }
-                P.push(row);
+                S.push(row);
             }
 
-            let sum = P.flat().reduce((a, b) => a + b, 0);
-            console.log("Sum of element-wise product:", sum);
-
-            console.log("xList", xList);
-            console.log("distance_matrix", distance_matrix);
-            console.log("data num", distance_matrix.length);
+            let transport_cost = S.flat().reduce((a, b) => a + b, 0);
+            return Math.max(100 - transport_cost * 100, 0);
 
 
         };
-        function normarize_distribution(dist) {
+        function normarize_distribution_for_transport(dist) {
+            // 負の値なくすために全体を上にシフト
+            let min = Math.min(...dist);
+            let shifted = dist.map(x => x + min);
+
             // 確率密度関数を正規化する
-            let sum = dist.reduce((a, b) => a + b, 0);
-            return dist.map(x => x / sum);
+            let sum = shifted.reduce((a, b) => a + b, 0);
+            return shifted.map(x => x / sum);
         }
+
         function calc_score(drawingPath) {
-            calc_transport(drawingPath);
+
             // 描画軌跡を評価する
             // 確率密度関数の形に近ければ近いほど高得点とする。
             // drawingPath = sampling(drawingPath);
@@ -564,7 +566,10 @@
         function stopDrawing() {
             if (isDrawing) {
                 normalized_drawingPath = normarizeDrawingPath(drawingPath);
-                score = calc_score(normalized_drawingPath);
+                let transport_score = calc_transport_score(normalized_drawingPath);
+                let abs_score = calc_score(normalized_drawingPath);
+                console.log("transport_score", transport_score);
+                console.log("abs_score", abs_score);
 
                 // 元に戻す
                 ctx.textAlign = "center";
@@ -576,11 +581,12 @@
                     context.font = 'normal 18pt "メイリオ"';
                     ctx.textAlign = "left";
                     ctx.textBaseline = "top";
-                    var comment = score2comment(score);
-                    ctx.fillText("得点: " + score.toFixed(2), 0, 0);
-                    ctx.fillText("Click to play again!", 0, 60);
+                    var comment = score2comment(abs_score);
+                    ctx.fillText("絶対誤差得点: " + abs_score.toFixed(2), 0, 0);
+                    ctx.fillText("最適輸送得点: " + transport_score.toFixed(2), 0, 30);
+                    ctx.fillText("Click to play again!", 0, 90);
                     ctx.fillStyle = SYUIRO_COLOR;
-                    ctx.fillText(comment, 0, 30);
+                    ctx.fillText(comment, 0, 60);
                     ctx.fillStyle = "#000000"; //元に戻す
                     // 正解の正規分布を描画
                     ctx.beginPath();
@@ -603,20 +609,6 @@
                 }
                 isDrawing = false;
                 drawingPath = [];
-                // ctx.beginPath();
-                // ctx.strokeStyle = 'red';
-                // xValues = normalized_drawingPath.map(([x, y]) => x);
-                // yValues = generate_answer_distribution(xValues);
-                // for (let i = 0; i < xValues.length; i++) {
-                //     const x = (xValues[i] - X_MIN) * WIDTH / (X_MAX - X_MIN);
-                //     const y = Y_ZERO - yValues[i] * Y_ZERO * 2;
-                //     if (i === 0) {
-                //         ctx.moveTo(x, y);
-                //     } else {
-                //         ctx.fillRect(x, y, 1, 1);
-                //         // ctx.lineTo(x, y);
-                //     }
-                // }
 
             }
         }
