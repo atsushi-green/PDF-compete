@@ -239,10 +239,24 @@
             // X_MAX = DIST.x_max
 
         }
+        function sampling_array(arr) {
+            const n = 20;
+            // n件以下の場合はそのまま返す
+            if (arr.length < n) return arr;
+
+            var interval = Math.floor(arr.length / n);
+            var sampledPath = [];
+            for (let i = 0; i < arr.length; i++) {
+                if (i % interval == 0) {
+                    sampledPath.push(arr[i]);
+                }
+            }
+            return sampledPath;
+
+        }
 
         function sampling(drawingPath) {
-            // var n = 20;
-            var n = 3;
+            var n = 50;
             // n件以下の場合はそのまま返す
             if (drawingPath.length < n) return drawingPath;
 
@@ -289,8 +303,75 @@
         var distName_ = document.getElementById('distributionName');
         distName_.innerHTML = "標準正規分布"
 
+        function calc_transport_score(drawingPath) {
+            answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
+            // drawingPath.map(([x, y]) => x
+            let xList = drawingPath.map(([x, y]) => x);
+            let yList = drawingPath.map(([x, y]) => y);
+
+            // answer_pdf_y = [1, 2, 3];
+            // yList = [3, 2, 1];
+            // データ件数が多いと最適輸送の計算が重くなるのでデータを間引く
+            let sampled_answer_pdf_y = sampling_array(answer_pdf_y);
+            let sampled_yList = sampling_array(yList);
+            let sampled_xList = sampling_array(xList);
+            // console.log("xList");
+            console.table("sampled_xList");
+            console.log(sampled_xList);
+            console.log("sampled_answer_pdf_y", sampled_answer_pdf_y.length);
+            // 出入りの合計が一致するように正規化
+            let normarized_ans = normarize_distribution_for_transport(sampled_answer_pdf_y);
+            let normarized_yList = normarize_distribution_for_transport(sampled_yList);
+
+            // 距離行列の定義
+            let matrix_size = normarized_yList.length;
+            // let matrix_size = 3;
+            let distance_matrix = Array.from({ length: matrix_size }, () => Array.from({ length: matrix_size }, () => 0));
+            for (let i = 0; i < matrix_size; i++) {
+                for (let j = 0; j < matrix_size; j++) {
+                    distance_matrix[i][j] = Math.abs(sampled_xList[i] - sampled_xList[j]);
+                    // デバッグ用にわかりやすくしている
+                    // distance_matrix[i][j] = Math.abs(i - j);
+                }
+            }
+            console.log("distance_matrix", distance_matrix);
+
+            // 二段階シンプレックス法で解く
+            newTableau = solveLinearProgramming1(distance_matrix, normarized_ans, normarized_yList);
+            P = solveLinearProgramming2(newTableau, distance_matrix);
+            // X = solveLinearProgramming(distance_matrix, answer_pdf_y, yList);
+            // console.log("X", X);
+            // P: 輸送行列
+            // CPが輸送コスト
+            // Pのi成分の和 = drawingPath
+            // Pのj成分の和 = answer_pdf_y
+            // 要素積の P \dot C を求める
+            let S = [];
+            for (let i = 0; i < distance_matrix.length; i++) {
+                let row = [];
+                for (let j = 0; j < distance_matrix[i].length; j++) {
+                    row.push(distance_matrix[i][j] * P[i][j]);
+                }
+                S.push(row);
+            }
+
+            let transport_cost = S.flat().reduce((a, b) => a + b, 0);
+            return Math.max(100 - transport_cost * 100, 0);
+
+
+        };
+        function normarize_distribution_for_transport(dist) {
+            // 負の値なくすために全体を上にシフト
+            let min = Math.min(...dist);
+            let shifted = dist.map(x => x + min);
+
+            // 確率密度関数を正規化する
+            let sum = shifted.reduce((a, b) => a + b, 0);
+            return shifted.map(x => x / sum);
+        }
 
         function calc_score(drawingPath) {
+
             // 描画軌跡を評価する
             // 確率密度関数の形に近ければ近いほど高得点とする。
             // drawingPath = sampling(drawingPath);
@@ -485,7 +566,10 @@
         function stopDrawing() {
             if (isDrawing) {
                 normalized_drawingPath = normarizeDrawingPath(drawingPath);
-                score = calc_score(normalized_drawingPath);
+                let transport_score = calc_transport_score(normalized_drawingPath);
+                let abs_score = calc_score(normalized_drawingPath);
+                console.log("transport_score", transport_score);
+                console.log("abs_score", abs_score);
 
                 // 元に戻す
                 ctx.textAlign = "center";
@@ -497,11 +581,12 @@
                     context.font = 'normal 18pt "メイリオ"';
                     ctx.textAlign = "left";
                     ctx.textBaseline = "top";
-                    var comment = score2comment(score);
-                    ctx.fillText("得点: " + score.toFixed(2), 0, 0);
-                    ctx.fillText("Click to play again!", 0, 60);
+                    var comment = score2comment(abs_score);
+                    ctx.fillText("絶対誤差得点: " + abs_score.toFixed(2), 0, 0);
+                    ctx.fillText("最適輸送得点: " + transport_score.toFixed(2), 0, 30);
+                    ctx.fillText("Click to play again!", 0, 90);
                     ctx.fillStyle = SYUIRO_COLOR;
-                    ctx.fillText(comment, 0, 30);
+                    ctx.fillText(comment, 0, 60);
                     ctx.fillStyle = "#000000"; //元に戻す
                     // 正解の正規分布を描画
                     ctx.beginPath();
@@ -524,26 +609,316 @@
                 }
                 isDrawing = false;
                 drawingPath = [];
-                // ctx.beginPath();
-                // ctx.strokeStyle = 'red';
-                // xValues = normalized_drawingPath.map(([x, y]) => x);
-                // yValues = generate_answer_distribution(xValues);
-                // for (let i = 0; i < xValues.length; i++) {
-                //     const x = (xValues[i] - X_MIN) * WIDTH / (X_MAX - X_MIN);
-                //     const y = Y_ZERO - yValues[i] * Y_ZERO * 2;
-                //     if (i === 0) {
-                //         ctx.moveTo(x, y);
-                //     } else {
-                //         ctx.fillRect(x, y, 1, 1);
-                //         // ctx.lineTo(x, y);
-                //     }
-                // }
 
             }
         }
+        function solveLinearProgramming1(C, a, b) {
+            // 二段階シンプレックス法の一段目
+            console.log("一段目");
+            const n = C.length;
+            // 多分m = n*n + 2*nにして、意味のないスラック変数を2n個追加しないといけない（解を見つけるため）。
+            // シンプレックスタブローの列数（制約条件は"="なのでスラック変数は要らない）
+            const m = n * n + 2 * n;
+            let tableau = createTableau1(C, a, b, n, m);
+            while (true) {
+                const pivotColumn = findPivotColumn(tableau);
+                if (pivotColumn === -1) break;
+
+                const pivotRow = findPivotRow(tableau, pivotColumn);
+                if (pivotRow === -1) throw new Error("Unbounded solution");
+
+                pivot(tableau, pivotRow, pivotColumn);
+
+            }
+            console.log("完成したtableau1");
+            console.table(tableau);
+            const newTableau = tableau.map(row => [...row.slice(0, n * n), row[row.length - 1]]);
+            console.log("二段階目のための抽出したtableau1");
+            console.table(newTableau);
 
 
+            return newTableau;
+        }
 
+
+        function createTableau1(C, a, b, n, m) {
+            // 二段階シンプレックス法の一段目のためのシンプレックスタブローを作成
+            // var tableau = Array(2 * n + 1).fill().map(() => Array(m + 1).fill(0));
+            var tableau1 = Array.from(new Array(2 * n + 1), _ => new Array(m + 1).fill(0));
+
+            // 1. 目的関数
+            // シンプレックスタブローの最初の行を、人工変数の係数で埋める
+            for (let j = n * n; j < n * n + 2 * n; j++) {
+                tableau1[0][j] = 1;
+            }
+
+            // 2. 制約条件
+            for (let i = 1; i < n + 1; i++) {
+                // シンプレックスタブローの最後の列に、等式の右辺を入れる（a）
+                tableau1[i][m] = a[i - 1];
+                for (let j = 0; j < n; j++) {
+                    // シンプレックスタブローの制約条件に、係数1を入れる
+                    tableau1[i][j + (i - 1) * n] = 1;
+                }
+            }
+
+            for (let i = n + 1; i < 2 * n + 1; i++) {
+                // シンプレックスタブローの最後の列に、等式の右辺を入れる（b）
+                tableau1[i][m] = b[i - n - 1];
+                // シンプレックスタブローの制約条件に、係数1を入れる
+                for (let j = 0; j < n; j++) {
+                    tableau1[i][j * n + i - 1 - n] = 1;
+                }
+            }
+
+            // さらに人工変数を追加
+            for (let i = 1; i < 2 * n + 1; i++) {
+                let col = n * n + i - 1;
+                tableau1[i][col] = 1;
+            }
+            console.log("引き算前");
+            console.table(tableau1);
+
+            // 一番上の行から、各行を引く
+            for (let i = 1; i < 2 * n + 1; i++) {
+                for (let j = 0; j < m + 1; j++) {
+                    tableau1[0][j] -= tableau1[i][j];
+                    // tableau1[0][j] = tableau1[0][j] - tableau1[i][j];
+                }
+            }
+            console.log("一番上の行から、各行を引く");
+            if (tableau1[0][m] < 0) {
+                console.log("a");
+                // console.log("tableau1-1", tableau1);
+                // console.log(tableau1[0][0], tableau1[0][1], tableau1[0][2], tableau1[0][3], tableau1[0][4], tableau1[0][5], tableau1[0][6], tableau1[0][7], tableau1[0][8], tableau1[0][9], tableau1[0][10], tableau1[0][11], tableau1[0][12], tableau1[0][13], tableau1[0][14], tableau1[0][15]
+                // );
+            }
+            else {
+                console.log("b");
+            }
+            // 以下コピーを作っている
+            let new_tableau = [];
+            for (let i = 0; i < 2 * n + 1; i++) {
+                new_tableau.push(tableau1[i].slice());
+                // new_tableau.push(tableau1[i]);
+            }
+            console.log("new_tableau");
+            console.table(tableau1);
+
+
+            return tableau1;
+        }
+
+        function solveLinearProgramming2(tableau2, C) {
+            console.log("二段階目");
+            const n = C.length;  // 変数の数
+            const m = tableau2[0].length; //タブローの列数
+            const num_tableau_length = tableau2.length;
+            // tableauの一行目をCで作り替えるだけ。
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    tableau2[0][i * n + j] = C[i][j];
+                }
+            }
+            console.log("tableauの一行目をCで作り替えるだけ");
+            console.table(tableau2);
+
+            // 基底解の行において、一番上の行から、各行を引く
+            for (let col = 0; col < m - 1; col++) {//一番最後の列は右辺なので対象外
+                let count = 0;
+                let baseIndex = -1;
+                for (let i = 1; i < num_tableau_length; i++) {
+                    if (tableau2[i][col] === 1) {
+                        count++;
+                        baseIndex = i;
+                    }
+                    else if (tableau2[i][col] !== 0) {
+                        count = -1;
+                        break;
+                    }
+                }
+                if (count === 1) {
+                    let factor = tableau2[0][col] / tableau2[baseIndex][col];
+                    for (let _col = 0; _col < m; _col++) {
+                        tableau2[0][_col] -= factor * tableau2[baseIndex][_col];
+                    }
+                }
+            }
+            console.log("二段階目開始時のtableau");
+            console.table(tableau2);
+
+            while (true) {
+                const pivotColumn = findPivotColumn(tableau2);
+                // console.log("2. ピボット列が見つかりました");
+                // console.log("pivotColumn", pivotColumn);
+                if (pivotColumn === -1) break;
+
+                const pivotRow = findPivotRow(tableau2, pivotColumn);
+                // console.log("3. ピボット行が見つかりました");
+                // console.log("pivotRow", pivotRow);
+                if (pivotRow === -1) throw new Error("Unbounded solution");
+
+                pivot(tableau2, pivotRow, pivotColumn);
+                // console.log("更新したtableau");
+                // console.table(tableau2);
+
+            }
+            console.log("完成したtableau2");
+            console.table(tableau2);
+            const X = extractSolution(tableau2, n);
+            console.table(X);
+            return X;
+        }
+        function solveLinearProgramming(C, a, b) {
+            console.log("距離行列C", C);
+            const n = C.length;
+            // const m = n * n + 2 * n;
+            // 多分m = n*n + 2*nにして、意味のないスラック変数を2n個追加しないといけない（解を見つけるため）。
+            // シンプレックスタブローの列数（制約条件は"="なのでスラック変数は要らない）
+            const m = n * n;
+            const tableau = createTableau(C, a, b, n, m);
+            console.log("1. tableauが作られました");
+
+            while (true) {
+                const pivotColumn = findPivotColumn(tableau);
+                console.log("2. ピボット列が見つかりました");
+                console.log("pivotColumn", pivotColumn);
+                if (pivotColumn === -1) break;
+
+                const pivotRow = findPivotRow(tableau, pivotColumn);
+                console.log("3. ピボット行が見つかりました");
+                console.log("pivotRow", pivotRow);
+                if (pivotRow === -1) throw new Error("Unbounded solution");
+
+                pivot(tableau, pivotRow, pivotColumn);
+
+            }
+
+            return extractSolution(tableau, n);
+        }
+
+        function createTableau(C, a, b, n, m) {
+            // a -> bへの輸送を考える
+            // const tableau = Array(n + 1).fill().map(() => Array(m).fill(0));
+            // 制約条件の数は2n個（輸送量の合計が等しい制約と、需要量が等しい制約）
+            // 最初の行に目的関数の係数を入れるために、行数を1にしている
+            const tableau = Array(2 * n + 1).fill().map(() => Array(m + 1).fill(0));
+            // 1. 目的関数
+            // シンプレックスタブローの最初の行を、距離行列の係数で埋める
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    tableau[0][i * n + j] = C[i][j];
+                }
+            }
+
+            // 2. 制約条件
+            for (let i = 1; i < n + 1; i++) {
+                // シンプレックスタブローの最後の列に、等式の右辺を入れる（a）
+                console.log("i", i,);
+                tableau[i][m] = a[i - 1];
+                for (let j = 0; j < n; j++) {
+                    // シンプレックスタブローの制約条件に、係数1を入れる
+                    tableau[i][j + (i - 1) * n] = 1;
+                }
+            }
+            for (let i = n + 1; i < 2 * n + 1; i++) {
+                // シンプレックスタブローの最後の列に、等式の右辺を入れる（b）
+                console.log("i", i);
+                tableau[i][m] = b[i - n - 1];
+                // シンプレックスタブローの制約条件に、係数1を入れる
+                for (let j = 0; j < n; j++) {
+                    tableau[i][j * n + i - 1 - n] = 1;
+                }
+            }
+
+            console.log("tableau", tableau);
+            return tableau;
+        }
+
+        function findPivotColumn(tableau) {
+            const n = tableau.length;
+            const m = tableau[0].length;
+            let minValue = 0;
+            let pivotColumn = -1;
+
+            for (let j = 0; j < m - 1; j++) {
+                if (tableau[0][j] < minValue) {
+                    minValue = tableau[0][j];
+                    pivotColumn = j;
+                }
+            }
+
+            return pivotColumn;
+        }
+
+        function findPivotRow(tableau, pivotColumn) {
+            const n = tableau.length;
+            const m = tableau[0].length;
+            let minRatio = Infinity;
+            let pivotRow = -1;
+
+            for (let i = 1; i < n; i++) {
+                if (tableau[i][pivotColumn] > 0) {
+                    const ratio = tableau[i][m - 1] / tableau[i][pivotColumn];
+                    if (ratio < minRatio) {
+                        minRatio = ratio;
+                        pivotRow = i;
+                    }
+                }
+            }
+
+            return pivotRow;
+        }
+
+        function pivot(tableau, pivotRow, pivotColumn) {
+            const n = tableau.length;
+            const m = tableau[0].length;
+            const pivotValue = tableau[pivotRow][pivotColumn];
+
+            for (let j = 0; j < m; j++) {
+                tableau[pivotRow][j] /= pivotValue;
+            }
+
+            for (let i = 0; i < n; i++) {
+                if (i !== pivotRow) {
+                    const factor = tableau[i][pivotColumn];
+                    for (let j = 0; j < m; j++) {
+                        tableau[i][j] -= factor * tableau[pivotRow][j];
+                    }
+                }
+            }
+        }
+
+        function extractSolution(tableau, n) {
+            // nは輸送元の数（タブローの行数ではない）
+            const X = Array(n).fill().map(() => Array(n).fill(0));
+            const num_tableau_length = tableau.length;
+            const num_tableau_col = tableau[0].length;
+
+            for (let col = 0; col < n * n; col++) {
+                let count = 0;
+                let rowIndex = -1;
+                for (let i = 1; i < num_tableau_length; i++) {
+                    // console.log("tableau[i][col]", tableau[i][col]);
+                    if (tableau[i][col] == 1) {
+                        count++;
+                        rowIndex = i;
+                    } else if (tableau[i][col] != 0) {
+                        count = -1;
+                        break;
+                    }
+                }
+                if (count === 1) {
+                    // rowIndex is the row index where the element is 1
+                    let X_col = col % n
+                    let X_index = Math.floor(col / n)
+                    X[X_index][X_col] = tableau[rowIndex][num_tableau_col - 1];
+                }
+
+
+            }
+            return X;
+        }
     </script>
 </body>
 
