@@ -385,13 +385,19 @@
         }
 
         function normarize_distribution_for_transport(dist) {
+            const samll_value = 0.0000001;
+            const aryMin = function (a, b) { return Math.min(a, b); }
+
             // 負の値なくすために全体を上にシフト
-            let min = Math.min(...dist);
-            let shifted = dist.map(x => x + min);
+            let min = dist.reduce(aryMin); // 最小値
+            for (let i = 0; i < dist.length; i++) {
+                // 0にならないように微小な値を足しながら上にシフト
+                dist[i] = dist[i] - min + samll_value;
+            }
 
             // 確率密度関数を正規化する
-            let sum = shifted.reduce((a, b) => a + b, 0);
-            return shifted.map(x => x / sum);
+            let sum = dist.reduce((a, b) => a + b, 0);
+            return dist.map(x => x / sum);
         }
 
         function calc_abs_diff_cost(drawingPath) {
@@ -606,10 +612,12 @@
                 let abs_cost = calc_abs_diff_cost(normalized_drawingPath);
                 let abs_score = abs_diff_cost2score(abs_cost);
 
-                console.log(DIST.name);
                 if (DIST.name != "標準正規分布" && DIST.name != "正規分布") {
+                    transport_cost = NaN;
                     transport_score = NaN;
+                    KL_divergence_cost = NaN;
                     KL_divergence_score = NaN;
+
                 }
                 console.log("transport_score", transport_score);
                 console.log("abs_score", abs_score);
