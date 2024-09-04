@@ -36,8 +36,7 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        button,
-        a {
+        button {
             background-color: #F26649;
             color: white;
             padding: 10px 20px;
@@ -48,8 +47,7 @@
             transition: background-color 0.3s;
         }
 
-        button:hover,
-        a:hover {
+        button:hover {
             background-color: #45a049;
         }
 
@@ -97,6 +95,9 @@
         <li>確率密度関数の確率密度が0の区間は採点対象外です。（描画しても減点されませんが、）指数分布のxが負の区間などは描かなくて大丈夫です。</li>
         <li>もう一度書き始めれば、自動的に同じ条件で再開されます。</li>
         <li>「ランダム出題モード」ボタンを押すたびに、描く確率密度関数のお題が変更されます（分布のパラメータに注意して描いてみてください）。</li>
+        <li>KL情報量では、フリーハンド確率密度が負になると計算しませんのでご注意ください。</li>
+        <li>KL情報量評価では、フリーハンドの「面積」が1になるようにスケール調整します。最適輸送ではこの調整を行わず、不均衡最適輸送しますので、面積が1になることを意識して描いてください。</li>
+        <li>各評価方法における得点はあくまでも「お遊び」であり、恣意的な点数調整があったり、実装のバグがあるかもしれなかったりする点をご了承ください。</li>
 
     </ul>
     <canvas id="drawingCanvas" style="touch-action: none;" width="500" height="500"></canvas>
@@ -111,8 +112,16 @@
         <button id="randombutton" type="button" onclick=setTheme()>ランダム出題モード</button>
     </div>
 
-    <a href="http://twitter.com/share?url=https://atsushi-green.github.io/PDF-compete/&text=確率密度関数を描いてみた！ &hashtags=PDFフリーハンドチャレンジ"
+    <a href="http://twitter.com/share?url=https://atsushi-green.github.io/PDF-compete/&text=確率密度関数を描いてみた！ &hashtags=フリーハンドチャレンジ"
         target="_blank" rel="nofollow noopener noreferrer">Xで共有する</a>
+
+    <ul>
+        <li>紹介記事: <a href="https://zenn.dev/green_tea/articles/401463e332bfb7"> 不均衡最適輸送によるフリーハンド確率分布の評価:
+                確率分布間の相違度定量化手法紹介
+            </a></li>
+        <li>作者: <a href="https://twitter.com/Syuiro_2"> redtea </a></li>
+    </ul>
+
     <small>
         <center> &copy; 2024 redtea</center>
     </small>
@@ -120,15 +129,6 @@
     <script src="./canvas.js"></script>
 
     <script>
-        /****************************************
-        # この実装を見に来てまでハイスコア (score, eval) を出したいた方へ
-        実装まで見にきてくださってありがとうございます！
-        ハイスコアを出すためのヒントを書いておきます。
-        - 評価方法はy軸の値の差の絶対値の「平均値」です。
-        - マウスドラッグ（スマホなら指の動き）の動きが遅いと評価するポイントが多くなり、速いと少なくなります。
-        - したがって、自信のある箇所はゆっくり動かすことで高得点を稼ぐことができ、自信がないところは素早く動かして誤魔化すことができます。
-        - 誤差の計算時に、一度絶対値の差を何倍かしてから二乗しているので、100点はほぼ出すことはできません。
-        *****************************************/
         const WIDTH = 500;
         const HEIGHT = 500;
         const Y_ZERO = 400;
@@ -262,7 +262,6 @@
 
 
             var interval = parseInt(drawingPath.length / n, 10);
-            console.log("interval", interval);
             var sampledPath = [];
             for (let i = 0; i < drawingPath.length; i++) {
                 if (i % interval == 0) {
@@ -303,25 +302,68 @@
         var distName_ = document.getElementById('distributionName');
         distName_.innerHTML = "標準正規分布"
 
-        function calc_transport_score(drawingPath) {
+        function calc_KL_divergence_cost(drawingPath) {
             answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
+            let xList = drawingPath.map(([x, y]) => x);
+            let yList = drawingPath.map(([x, y]) => y);
+            // let sampled_answer_pdf_y = sampling_array(answer_pdf_y);
+            // let sampled_yList = sampling_array(yList);
+            // let sampled_xList = sampling_array(xList);
+            const aryMin = function (a, b) { return Math.min(a, b); }
+            let min = yList.reduce(aryMin); // 最小値
+            if (min < 0) {
+                // 負があると計算しない（負にならないように底上げしても良いが、教育的にやらない）
+                return NaN;
+            }
+            // 面積は1にしてあげる
+            let normarized_ans = normarize_distribution_for_KL_divergence(answer_pdf_y);
+            let normarized_yList = normarize_distribution_for_KL_divergence(yList);
+            let kl_divergence = 0;
+            for (let i = 0; i < normarized_ans.length; i++) {
+                if (normarized_ans[i] === 0) {
+                    // 0の箇所は採点対象外
+                    continue
+                }
+                let d = normarized_ans[i] * Math.log(normarized_ans[i] / normarized_yList[i]);
+                // console.log(normarized_ans[i], normarized_yList[i], d);
+                kl_divergence += normarized_ans[i] * Math.log(normarized_ans[i] / normarized_yList[i]);
+            }
+            return kl_divergence
+
+        }
+
+        function KL_divergence_cost2score(kl_divergence) {
+            return Math.max(100 - kl_divergence * 100, 0);
+        }
+
+        function calc_transport_cost(drawingPath) {
+            const lambda = 4;  // 不均衡最適輸送を考える上での生成・消滅時のコスト
+            answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
+
+
             // drawingPath.map(([x, y]) => x
             let xList = drawingPath.map(([x, y]) => x);
             let yList = drawingPath.map(([x, y]) => y);
-
+            // 正解の確率密度関数が0の場所は採点対象外
+            for (let i = 0; i < answer_pdf_y.length; i++) {
+                if (answer_pdf_y[i] === 0) {
+                    // 0の箇所は0にしておくことで最適輸送の計算に影響が出ないようにする
+                    yList[i] = 0;
+                }
+            }
             // answer_pdf_y = [1, 2, 3];
             // yList = [3, 2, 1];
             // データ件数が多いと最適輸送の計算が重くなるのでデータを間引く
             let sampled_answer_pdf_y = sampling_array(answer_pdf_y);
             let sampled_yList = sampling_array(yList);
             let sampled_xList = sampling_array(xList);
-            // console.log("xList");
-            console.table("sampled_xList");
-            console.log(sampled_xList);
-            console.log("sampled_answer_pdf_y", sampled_answer_pdf_y.length);
-            // 出入りの合計が一致するように正規化
-            let normarized_ans = normarize_distribution_for_transport(sampled_answer_pdf_y);
-            let normarized_yList = normarize_distribution_for_transport(sampled_yList);
+
+            // 出入りの合計が一致するように正規化 -> 不均衡最適輸送問題を解くのでこれはやらない
+            // let normarized_ans = normarize_distribution_for_transport(sampled_answer_pdf_y);
+            // let normarized_yList = normarize_distribution_for_transport(sampled_yList);
+
+            let normarized_ans = sampled_answer_pdf_y;
+            let normarized_yList = sampled_yList;
 
             // 距離行列の定義
             let matrix_size = normarized_yList.length;
@@ -334,13 +376,23 @@
                     // distance_matrix[i][j] = Math.abs(i - j);
                 }
             }
-            console.log("distance_matrix", distance_matrix);
 
             // 二段階シンプレックス法で解く
             newTableau = solveLinearProgramming1(distance_matrix, normarized_ans, normarized_yList);
             P = solveLinearProgramming2(newTableau, distance_matrix);
-            // X = solveLinearProgramming(distance_matrix, answer_pdf_y, yList);
-            // console.log("X", X);
+
+            // 不均衡最適輸送のペナルティを計算
+            let rowSums = P.map(row => row.reduce((sum, value) => sum + value, 0));
+            let colSums = P[0].map((col, i) => P.map(row => row[i]).reduce((sum, value) => sum + value, 0));
+            var penalty = 0;
+            for (let i = 0; i < rowSums.length; i++) {
+                penalty += Math.abs(normarized_ans[i] - rowSums[i])
+            }
+
+            for (let i = 0; i < colSums.length; i++) {
+                penalty += Math.abs(normarized_yList[i] - colSums[i])
+            }
+
             // P: 輸送行列
             // CPが輸送コスト
             // Pのi成分の和 = drawingPath
@@ -356,26 +408,45 @@
             }
 
             let transport_cost = S.flat().reduce((a, b) => a + b, 0);
-            return Math.max(100 - transport_cost * 100, 0);
+            console.log("penalty=", penalty * lambda, "transport_cost=", transport_cost)
+            let imbalance_transport_cost = penalty * lambda + transport_cost;
 
-
+            return imbalance_transport_cost
         };
-        function normarize_distribution_for_transport(dist) {
-            // 負の値なくすために全体を上にシフト
-            let min = Math.min(...dist);
-            let shifted = dist.map(x => x + min);
 
-            // 確率密度関数を正規化する
-            let sum = shifted.reduce((a, b) => a + b, 0);
-            return shifted.map(x => x / sum);
+        function transport_cost2score(transport_cost) {
+            return Math.max(100 - transport_cost * 10, 0);
         }
 
-        function calc_score(drawingPath) {
+
+        function normarize_distribution_for_KL_divergence(dist) {
+            // 面積が1になるように正規化する
+            let sum = dist.reduce((a, b) => a + b, 0);
+            return dist.map(x => x / sum);
+        }
+
+
+        function normarize_distribution_for_transport(dist) {
+            const samll_value = 0.0000001;
+            const aryMin = function (a, b) { return Math.min(a, b); }
+
+            // 負の値なくすために全体を上にシフト
+            let min = dist.reduce(aryMin); // 最小値
+            for (let i = 0; i < dist.length; i++) {
+                // 0にならないように微小な値を足しながら上にシフト
+                dist[i] = dist[i] - min + samll_value;
+            }
+
+            // 確率密度関数を正規化する
+            let sum = dist.reduce((a, b) => a + b, 0);
+            return dist.map(x => x / sum);
+        }
+
+        function calc_abs_diff_cost(drawingPath) {
 
             // 描画軌跡を評価する
             // 確率密度関数の形に近ければ近いほど高得点とする。
             // drawingPath = sampling(drawingPath);
-            console.log("drawingPath.length", drawingPath.length);
             answer_pdf_y = generate_answer_distribution(drawingPath.map(([x, y]) => x));
 
             drawingPath_y = drawingPath.map(([x, y]) => y);
@@ -389,10 +460,14 @@
                     continue
                 }
                 // パラメータの微調整で750に決定
-                cost += Math.abs((answer_pdf_y[i] - drawingPath_y[i]) * 750);
+                cost += Math.abs((answer_pdf_y[i] - drawingPath_y[i]));
             }
+            return cost / n;
 
-            return Math.max(100 - (cost / drawingPath_y.length), 0);
+        }
+
+        function abs_diff_cost2score(cost) {
+            return Math.max(100 - (cost * 600), 0);
         }
 
         function normarizeDrawingPath(drawingPath) {
@@ -566,10 +641,28 @@
         function stopDrawing() {
             if (isDrawing) {
                 normalized_drawingPath = normarizeDrawingPath(drawingPath);
-                let transport_score = calc_transport_score(normalized_drawingPath);
-                let abs_score = calc_score(normalized_drawingPath);
+                // 最適輸送のスコア計算
+                let transport_cost = calc_transport_cost(normalized_drawingPath);
+                let transport_score = transport_cost2score(transport_cost);
+
+                // KL情報量のスコア計算
+                let KL_divergence_cost = calc_KL_divergence_cost(normalized_drawingPath);
+                let KL_divergence_score = KL_divergence_cost2score(KL_divergence_cost);
+
+                // 絶対誤差のスコア計算
+                let abs_cost = calc_abs_diff_cost(normalized_drawingPath);
+                let abs_score = abs_diff_cost2score(abs_cost);
+
+                // if (DIST.name != "標準正規分布" && DIST.name != "正規分布") {
+                //     transport_cost = NaN;
+                //     transport_score = NaN;
+                //     KL_divergence_cost = NaN;
+                //     KL_divergence_score = NaN;
+
+                // }
                 console.log("transport_score", transport_score);
                 console.log("abs_score", abs_score);
+                console.log("KL_divergence_score", KL_divergence_score);
 
                 // 元に戻す
                 ctx.textAlign = "center";
@@ -581,13 +674,20 @@
                     context.font = 'normal 18pt "メイリオ"';
                     ctx.textAlign = "left";
                     ctx.textBaseline = "top";
-                    var comment = score2comment(abs_score);
-                    ctx.fillText("絶対誤差得点: " + abs_score.toFixed(2), 0, 0);
-                    ctx.fillText("最適輸送得点: " + transport_score.toFixed(2), 0, 30);
-                    ctx.fillText("Click to play again!", 0, 90);
+                    var comment = score2comment(transport_score);
+                    ctx.fillText("最適輸送得点: " + transport_score.toFixed(2), 0, 0);
+                    ctx.fillText("絶対誤差得点: " + abs_score.toFixed(2), 0, 30);
+                    ctx.fillText("KL情報量得点: " + KL_divergence_score.toFixed(2), 0, 60);
+                    ctx.fillText("Click to play again!", 0, 120);
                     ctx.fillStyle = SYUIRO_COLOR;
-                    ctx.fillText(comment, 0, 60);
+                    ctx.fillText(comment, 0, 90);
+
+                    context.font = 'normal 8pt "メイリオ"';
                     ctx.fillStyle = "#000000"; //元に戻す
+                    ctx.fillText("最適輸送コスト: " + transport_cost.toFixed(2), 0, 445);
+                    ctx.fillText("絶対誤差平均: " + abs_cost.toFixed(2), 0, 460);
+                    ctx.fillText("KL情報量: " + KL_divergence_cost.toFixed(2), 0, 475);
+
                     // 正解の正規分布を描画
                     ctx.beginPath();
                     ctx.strokeStyle = SYUIRO_COLOR;
@@ -614,7 +714,7 @@
         }
         function solveLinearProgramming1(C, a, b) {
             // 二段階シンプレックス法の一段目
-            console.log("一段目");
+            // console.log("一段目");
             const n = C.length;
             // 多分m = n*n + 2*nにして、意味のないスラック変数を2n個追加しないといけない（解を見つけるため）。
             // シンプレックスタブローの列数（制約条件は"="なのでスラック変数は要らない）
@@ -630,11 +730,11 @@
                 pivot(tableau, pivotRow, pivotColumn);
 
             }
-            console.log("完成したtableau1");
-            console.table(tableau);
+            // console.log("完成したtableau1");
+            // console.table(tableau);
             const newTableau = tableau.map(row => [...row.slice(0, n * n), row[row.length - 1]]);
-            console.log("二段階目のための抽出したtableau1");
-            console.table(newTableau);
+            // console.log("二段階目のための抽出したtableau1");
+            // console.table(newTableau);
 
 
             return newTableau;
@@ -676,8 +776,6 @@
                 let col = n * n + i - 1;
                 tableau1[i][col] = 1;
             }
-            console.log("引き算前");
-            console.table(tableau1);
 
             // 一番上の行から、各行を引く
             for (let i = 1; i < 2 * n + 1; i++) {
@@ -686,31 +784,17 @@
                     // tableau1[0][j] = tableau1[0][j] - tableau1[i][j];
                 }
             }
-            console.log("一番上の行から、各行を引く");
-            if (tableau1[0][m] < 0) {
-                console.log("a");
-                // console.log("tableau1-1", tableau1);
-                // console.log(tableau1[0][0], tableau1[0][1], tableau1[0][2], tableau1[0][3], tableau1[0][4], tableau1[0][5], tableau1[0][6], tableau1[0][7], tableau1[0][8], tableau1[0][9], tableau1[0][10], tableau1[0][11], tableau1[0][12], tableau1[0][13], tableau1[0][14], tableau1[0][15]
-                // );
-            }
-            else {
-                console.log("b");
-            }
-            // 以下コピーを作っている
-            let new_tableau = [];
-            for (let i = 0; i < 2 * n + 1; i++) {
-                new_tableau.push(tableau1[i].slice());
-                // new_tableau.push(tableau1[i]);
-            }
-            console.log("new_tableau");
-            console.table(tableau1);
+
+
+            // console.log("new_tableau");
+            // console.table(tableau1);
 
 
             return tableau1;
         }
 
         function solveLinearProgramming2(tableau2, C) {
-            console.log("二段階目");
+            // console.log("二段階目");
             const n = C.length;  // 変数の数
             const m = tableau2[0].length; //タブローの列数
             const num_tableau_length = tableau2.length;
@@ -720,8 +804,8 @@
                     tableau2[0][i * n + j] = C[i][j];
                 }
             }
-            console.log("tableauの一行目をCで作り替えるだけ");
-            console.table(tableau2);
+            // console.log("tableauの一行目をCで作り替えるだけ");
+            // console.table(tableau2);
 
             // 基底解の行において、一番上の行から、各行を引く
             for (let col = 0; col < m - 1; col++) {//一番最後の列は右辺なので対象外
@@ -744,8 +828,8 @@
                     }
                 }
             }
-            console.log("二段階目開始時のtableau");
-            console.table(tableau2);
+            // console.log("二段階目開始時のtableau");
+            // console.table(tableau2);
 
             while (true) {
                 const pivotColumn = findPivotColumn(tableau2);
@@ -763,38 +847,11 @@
                 // console.table(tableau2);
 
             }
-            console.log("完成したtableau2");
-            console.table(tableau2);
+            // console.log("完成したtableau2");
+            // console.table(tableau2);
             const X = extractSolution(tableau2, n);
-            console.table(X);
+            // console.table(X);
             return X;
-        }
-        function solveLinearProgramming(C, a, b) {
-            console.log("距離行列C", C);
-            const n = C.length;
-            // const m = n * n + 2 * n;
-            // 多分m = n*n + 2*nにして、意味のないスラック変数を2n個追加しないといけない（解を見つけるため）。
-            // シンプレックスタブローの列数（制約条件は"="なのでスラック変数は要らない）
-            const m = n * n;
-            const tableau = createTableau(C, a, b, n, m);
-            console.log("1. tableauが作られました");
-
-            while (true) {
-                const pivotColumn = findPivotColumn(tableau);
-                console.log("2. ピボット列が見つかりました");
-                console.log("pivotColumn", pivotColumn);
-                if (pivotColumn === -1) break;
-
-                const pivotRow = findPivotRow(tableau, pivotColumn);
-                console.log("3. ピボット行が見つかりました");
-                console.log("pivotRow", pivotRow);
-                if (pivotRow === -1) throw new Error("Unbounded solution");
-
-                pivot(tableau, pivotRow, pivotColumn);
-
-            }
-
-            return extractSolution(tableau, n);
         }
 
         function createTableau(C, a, b, n, m) {
